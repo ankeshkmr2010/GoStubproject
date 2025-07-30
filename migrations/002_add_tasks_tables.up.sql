@@ -10,6 +10,7 @@ Create table if not exists tasks (
     task_data jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
+    requested_at timestamptz not null ,
     primary key (id)
 );
 

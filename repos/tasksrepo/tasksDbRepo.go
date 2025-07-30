@@ -16,21 +16,21 @@ import (
 )
 
 const (
-	getLatestActiveTaskById = ` SELECT id, name, description, status, priority, created_by,is_deleted, task_data,created_at,updated_at
+	getLatestActiveTaskById = ` SELECT id, name, description, status, priority, created_by,is_deleted, task_data,created_at,updated_at, requested_at
 		FROM tasks
 		WHERE id = $1
 		  AND is_deleted = false
 		LIMIT 1;`
 
-	getLatestActiveTasksForCreator = ` SELECT id, name, description, status, priority, created_by, is_deleted,task_data,created_at,updated_at
+	getLatestActiveTasksForCreator = ` SELECT id, name, description, status, priority, created_by, is_deleted,task_data,created_at,updated_at, requested_at
 	FROM tasks
 	WHERE created_by = $1
 	  AND is_deleted = false
 	ORDER BY created_at DESC;
 	`
 
-	insertIntoTasks = `INSERT INTO tasks (id, name, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at)
-    	VALUES ($1, $2, $3, $4, $5, $6, false, $7, NOW(), NOW()) `
+	insertIntoTasks = `INSERT INTO tasks (id, name, description, status, priority, created_by, is_deleted, task_data, requested_at,created_at, updated_at)
+    	VALUES ($1, $2, $3, $4, $5, $6, false, $7,$8, NOW(), NOW()) `
 
 	updateTask = `UPDATE tasks
 	SET name = $1, description = $2, status = $3, priority = $4, task_data = $5, updated_at = NOW()
@@ -45,13 +45,13 @@ const (
 	WHERE id = $1
 	  AND is_deleted = false;`
 
-	listTasks = `SELECT id, name, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at 
+	listTasks = `SELECT id, name, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at, requested_at 
 	FROM tasks
 	WHERE is_deleted = false
 	ORDER BY created_at DESC;`
 
 	listAllPaginated = `
-		SELECT id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at
+		SELECT id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at, requested_at
 		FROM tasks
 		WHERE is_deleted = false
 		AND (
@@ -70,7 +70,7 @@ type TasksDbAccessorImpl struct {
 func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dtos.GetTaskResp, error) {
 	var taskData s.Task
 	row := t.db.QueryRow(ctx, getLatestActiveTaskById, id)
-	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt)
+	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt, &taskData.RequestedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Println("No task found with ID: ", id)
@@ -79,19 +79,7 @@ func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dt
 		return dtos.GetTaskResp{}, err
 	}
 
-	return dtos.GetTaskResp{
-		NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
-			ID:          taskData.ID,
-			Name:        taskData.Name,
-			Description: taskData.Description,
-			Status:      taskData.Status,
-			Priority:    taskData.Priority,
-			CreatedBy:   taskData.CreatedBy,
-			TaskData:    taskData.TaskData,
-			CreatedAt:   taskData.CreatedAt,
-			UpdatedAt:   taskData.UpdatedAt,
-		},
-	}, nil
+	return getRespFromTaskData(taskData), nil
 }
 
 func (t *TasksDbAccessorImpl) GetTasksForCreator(ctx context.Context, createdBy uuid.UUID) ([]dtos.GetTaskResp, error) {
@@ -104,23 +92,35 @@ func (t *TasksDbAccessorImpl) GetTasksForCreator(ctx context.Context, createdBy 
 
 	for rows.Next() {
 		var td s.Task
-		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, td.RequestedAt); err != nil {
 			return nil, err
 		}
-
 		tasks = append(tasks, getRespFromTaskData(td))
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
 	return tasks, nil
 }
 
 func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTaskReq) (dtos.CreateTaskResp, error) {
 	id := uuid.New()
-	_, err := t.db.Exec(ctx, insertIntoTasks, id, task.Name, task.Description, task.Status, task.Priority, task.CreatedBy, task.TaskData)
+	if task.RequestedAt.IsZero() {
+		log.Println("Requested at is required for task creation")
+		return dtos.CreateTaskResp{}, errors.New("requested at is required for task creation")
+	}
+	if task.Name == "" {
+		log.Println("Task name is required for creation")
+		return dtos.CreateTaskResp{}, errors.New("task name is required for creation")
+	}
+
+	if task.Status == "" {
+		log.Println("Task status is required for creation")
+		return dtos.CreateTaskResp{}, errors.New("task status is required for creation")
+	}
+
+	_, err := t.db.Exec(ctx, insertIntoTasks, id, task.Name, task.Description, task.Status, task.Priority, task.CreatedBy, task.TaskData, task.RequestedAt)
 	if err != nil {
 		log.Println("Error inserting new task: ", err)
 		return dtos.CreateTaskResp{}, err
@@ -129,15 +129,14 @@ func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTa
 	return dtos.CreateTaskResp{
 		ID: id,
 		GetTaskResp: &dtos.GetTaskResp{
-			NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
-				ID:          id,
-				Name:        task.Name,
-				Description: task.Description,
-				Status:      task.Status,
-				Priority:    task.Priority,
-				CreatedBy:   task.CreatedBy,
-				TaskData:    task.TaskData,
-			},
+			ID:          id,
+			Name:        task.Name,
+			Description: task.Description,
+			Status:      task.Status,
+			Priority:    task.Priority,
+			TaskData:    task.TaskData,
+			CreatedBy:   task.CreatedBy,
+			RequestedAt: task.RequestedAt,
 		},
 	}, nil
 }
@@ -160,38 +159,53 @@ func (t *TasksDbAccessorImpl) AddNewChildTask(ctx context.Context, task dtos.Add
 	return nil
 }
 
-func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, task dtos.UpdateTaskReq) (dtos.CreateTaskResp, error) {
+func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, updTask dtos.UpdateTaskReq) (dtos.CreateTaskResp, error) {
 	// get task by ID to ensure it exists and is not deleted
-	existingTask, err := t.GetTaskByID(ctx, task.TaskID)
+	if updTask.TaskID == uuid.Nil {
+		log.Println("Task ID is required for update")
+		return dtos.CreateTaskResp{}, errors.New("task ID is required for update")
+	}
+
+	if updTask.RequestedAt.IsZero() {
+		log.Println("Requested at is required for update")
+		return dtos.CreateTaskResp{}, errors.New("requested at is required for update")
+	}
+
+	existingTask, err := t.GetTaskByID(ctx, updTask.TaskID)
 	if err != nil {
 		log.Println("Error retrieving task for update: ", err)
 		return dtos.CreateTaskResp{}, err
 	}
 
-	if existingTask.NonDeletedTaskResp == nil {
-		log.Println("Task not found or is deleted: ", task.TaskID)
-		return dtos.CreateTaskResp{}, fmt.Errorf("task not found or is deleted: %s", task.TaskID)
+	if existingTask.ID == uuid.Nil {
+		log.Println("Task not found or is deleted: ", updTask.TaskID)
+		return dtos.CreateTaskResp{}, fmt.Errorf("task not found or is deleted: %s", updTask.TaskID)
 	}
 
 	if existingTask.IsDeleted {
-		log.Println("Task is deleted, cannot update: ", task.TaskID)
-		return dtos.CreateTaskResp{}, fmt.Errorf("task is deleted: %s", task.TaskID)
+		log.Println("Task is deleted, cannot update: ", updTask.TaskID)
+		return dtos.CreateTaskResp{}, fmt.Errorf("task is deleted: %s", updTask.TaskID)
 	}
 
-	if task.Name == "" {
-		task.Name = existingTask.Name
+	if updTask.RequestedAt.Before(existingTask.RequestedAt) {
+		log.Println("RequestedAt for update is older than existing task")
+		return dtos.CreateTaskResp{}, errors.New("requestedAt for update task is lesser than existing tasks requested at time")
 	}
-	if task.Description == "" {
-		task.Description = existingTask.Description
+
+	if updTask.Name == "" {
+		updTask.Name = existingTask.Name
 	}
-	if task.Status == "" {
-		task.Status = existingTask.Status
+	if updTask.Description == "" {
+		updTask.Description = existingTask.Description
 	}
-	if task.Priority == 0 {
-		task.Priority = existingTask.Priority
+	if updTask.Status == "" {
+		updTask.Status = existingTask.Status
 	}
-	if task.TaskData == nil {
-		task.TaskData = existingTask.TaskData
+	if updTask.Priority == 0 {
+		updTask.Priority = existingTask.Priority
+	}
+	if updTask.TaskData == nil {
+		updTask.TaskData = existingTask.TaskData
 	}
 
 	tx, err := t.db.BeginTx(ctx, pgx.TxOptions{})
@@ -205,7 +219,7 @@ func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, task dtos.UpdateTa
 		}
 	}(tx, ctx)
 
-	_, err = tx.Exec(ctx, updateTask, task.Name, task.Description, task.Status, task.Priority, task.TaskData, task.TaskID)
+	_, err = tx.Exec(ctx, updateTask, updTask.Name, updTask.Description, updTask.Status, updTask.Priority, updTask.TaskData, updTask.TaskID)
 	if err != nil {
 		log.Println("Error updating task: ", err)
 		return dtos.CreateTaskResp{}, err
@@ -218,16 +232,14 @@ func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, task dtos.UpdateTa
 	}
 
 	return dtos.CreateTaskResp{
-		ID: task.TaskID,
+		ID: updTask.TaskID,
 		GetTaskResp: &dtos.GetTaskResp{
-			NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
-				ID:          task.TaskID,
-				Name:        task.Name,
-				Description: task.Description,
-				Status:      task.Status,
-				Priority:    task.Priority,
-				TaskData:    task.TaskData,
-			},
+			ID:          updTask.TaskID,
+			Name:        updTask.Name,
+			Description: updTask.Description,
+			Status:      updTask.Status,
+			Priority:    updTask.Priority,
+			TaskData:    updTask.TaskData,
 		},
 	}, nil
 }
@@ -263,7 +275,7 @@ func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp
 
 	for rows.Next() {
 		var td s.Task
-		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt); err != nil {
 			return nil, err
 		}
 
@@ -306,7 +318,7 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, cursor *s.
 	for rows.Next() {
 		var td s.Task
 		// 					id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at
-		err := rows.Scan(&td.ID, &td.Name, &td.SerialNumber, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt)
+		err := rows.Scan(&td.ID, &td.Name, &td.SerialNumber, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt)
 		if err != nil {
 			return dtos.ListTasksResp{}, err
 		}
@@ -324,18 +336,17 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, cursor *s.
 
 func getRespFromTaskData(taskData s.Task) dtos.GetTaskResp {
 	return dtos.GetTaskResp{
-		NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
-			ID:          taskData.ID,
-			Name:        taskData.Name,
-			Description: taskData.Description,
-			Status:      taskData.Status,
-			Priority:    taskData.Priority,
-			CreatedBy:   taskData.CreatedBy,
-			TaskData:    taskData.TaskData,
-			CreatedAt:   taskData.CreatedAt,
-			UpdatedAt:   taskData.UpdatedAt,
-		},
-		IsDeleted: taskData.IsDeleted,
+		ID:          taskData.ID,
+		Name:        taskData.Name,
+		Description: taskData.Description,
+		Status:      taskData.Status,
+		Priority:    taskData.Priority,
+		CreatedBy:   taskData.CreatedBy,
+		TaskData:    taskData.TaskData,
+		CreatedAt:   taskData.CreatedAt,
+		UpdatedAt:   taskData.UpdatedAt,
+		RequestedAt: taskData.RequestedAt,
+		IsDeleted:   taskData.IsDeleted,
 	}
 }
 

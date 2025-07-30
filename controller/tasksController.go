@@ -44,7 +44,7 @@ func (a *AppController) CreateTask(c *gin.Context) {
 func (a *AppController) UpdateTask(c *gin.Context) {
 	var updateTaskReq dtos.UpdateTaskReq
 	if err := c.ShouldBindJSON(&updateTaskReq); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid request body"})
+		c.JSON(400, gin.H{"error": "Invalid request body", "details": err.Error()})
 		return
 	}
 
@@ -76,7 +76,7 @@ func (a *AppController) DeleteTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(204, map[string]string{"message": "Task deleted successfully"})
+	c.JSON(204, gin.H{"message": "Task deleted successfully"})
 }
 
 func (a *AppController) ListAllTasks(c *gin.Context) {

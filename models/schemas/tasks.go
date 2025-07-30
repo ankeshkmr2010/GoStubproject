@@ -19,6 +19,7 @@ type Task struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 	Children     []*Task         `json:"children,omitempty"`
 	SerialNumber int64           `json:"serial_number"`
+	RequestedAt  time.Time       `json:"requested_at,omitempty"`
 }
 
 type TaskCursor struct {

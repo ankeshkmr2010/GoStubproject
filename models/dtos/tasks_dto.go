@@ -25,17 +25,19 @@ type CreateTaskReq struct {
 	TaskData    json.RawMessage `json:"task_data"`
 	Priority    int             `json:"priority"`
 	CreatedBy   uuid.UUID       `json:"created_by"`
+	RequestedAt time.Time       `json:"requested_at"`
 }
 
 // --- Update Task ---
 
 type UpdateTaskReq struct {
-	TaskID      uuid.UUID       `json:"task_id"`
+	TaskID      uuid.UUID       `json:"id"`
 	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
+	Description string          `json:"description"`
 	Status      string          `json:"status"`
 	TaskData    json.RawMessage `json:"task_data"`
 	Priority    int             `json:"priority"`
+	RequestedAt time.Time       `json:"requested_at"`
 }
 type AddNewChildTaskReq struct {
 	TaskID    uuid.UUID   `json:"task_id"`
@@ -54,11 +56,6 @@ type ListTasksReq struct {
 // --- Get Task ---
 
 type GetTaskResp struct {
-	*NonDeletedTaskResp
-	IsDeleted bool `json:"is_deleted"`
-}
-
-type NonDeletedTaskResp struct {
 	ID           uuid.UUID       `json:"id"`
 	Name         string          `json:"name"`
 	Description  string          `json:"description,omitempty"`
@@ -66,9 +63,14 @@ type NonDeletedTaskResp struct {
 	Priority     int             `json:"priority"`
 	CreatedBy    uuid.UUID       `json:"created_by"`
 	TaskData     json.RawMessage `json:"task_data"`
-	CreatedAt    time.Time       `json:"created_at"`              // ISO 8601
-	UpdatedAt    time.Time       `json:"updated_at"`              // ISO 8601
-	SerialNumber int64           `json:"serial_number,omitempty"` // Serial number for ordering
+	CreatedAt    time.Time       `json:"created_at,omitempty"`
+	UpdatedAt    time.Time       `json:"updated_at,omitempty"`
+	SerialNumber int64           `json:"serial_number,omitempty"`
+	RequestedAt  time.Time       `json:"requested_at,omitempty"`
+	IsDeleted    bool            `json:"is_deleted,omitempty"`
+}
+
+type NonDeletedTaskResp struct {
 }
 
 type CreateTaskResp struct {
