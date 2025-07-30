@@ -45,10 +45,10 @@ func main() {
 		router.GET("/ping", appController.Ping)
 		router.GET("/task/:id", appController.GetTaskByID)
 		router.POST("/task/create", appController.CreateTask)
-		router.POST("/task/add_child", appController.AddNewChildTask)
 		router.PUT("/task/update", appController.UpdateTask)
 		router.DELETE("/task/delete/:id", appController.DeleteTask)
 		router.GET("/task/list", appController.ListAllTasks)
+		router.POST("task/list_paginated", appController.ListTasksPaginated)
 
 		server = &http.Server{
 			Addr:    ":8080",
