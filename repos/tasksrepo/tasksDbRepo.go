@@ -29,6 +29,13 @@ const (
 	ORDER BY created_at DESC;
 	`
 
+	getTaskDetailsForUpdate = `
+	SELECT id, serial_number, name, description, status, priority,created_by, is_deleted, task_data, created_at, updated_at, requested_at
+		FROM tasks
+		WHERE id = $1 
+		  AND is_deleted = false
+		FOR UPDATE;`
+
 	insertIntoTasks = `INSERT INTO tasks (id, name, description, status, priority, created_by, is_deleted, task_data, requested_at,created_at, updated_at)
     	VALUES ($1, $2, $3, $4, $5, $6, false, $7,$8, NOW(), NOW()) `
 
@@ -69,6 +76,10 @@ type TasksDbAccessorImpl struct {
 
 func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dtos.GetTaskResp, error) {
 	var taskData s.Task
+	if id == uuid.Nil {
+		log.Println("Task ID is required for retrieval")
+		return dtos.GetTaskResp{}, errors.New("task ID is required for retrieval")
+	}
 	row := t.db.QueryRow(ctx, getLatestActiveTaskById, id)
 	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt, &taskData.RequestedAt)
 	if err != nil {
@@ -171,53 +182,44 @@ func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, updTask dtos.Updat
 		return dtos.CreateTaskResp{}, errors.New("requested at is required for update")
 	}
 
-	existingTask, err := t.GetTaskByID(ctx, updTask.TaskID)
-	if err != nil {
-		log.Println("Error retrieving task for update: ", err)
-		return dtos.CreateTaskResp{}, err
-	}
-
-	if existingTask.ID == uuid.Nil {
-		log.Println("Task not found or is deleted: ", updTask.TaskID)
-		return dtos.CreateTaskResp{}, fmt.Errorf("task not found or is deleted: %s", updTask.TaskID)
-	}
-
-	if existingTask.IsDeleted {
-		log.Println("Task is deleted, cannot update: ", updTask.TaskID)
-		return dtos.CreateTaskResp{}, fmt.Errorf("task is deleted: %s", updTask.TaskID)
-	}
-
-	if updTask.RequestedAt.Before(existingTask.RequestedAt) {
-		log.Println("RequestedAt for update is older than existing task")
-		return dtos.CreateTaskResp{}, errors.New("requestedAt for update task is lesser than existing tasks requested at time")
-	}
-
-	if updTask.Name == "" {
-		updTask.Name = existingTask.Name
-	}
-	if updTask.Description == "" {
-		updTask.Description = existingTask.Description
-	}
-	if updTask.Status == "" {
-		updTask.Status = existingTask.Status
-	}
-	if updTask.Priority == 0 {
-		updTask.Priority = existingTask.Priority
-	}
-	if updTask.TaskData == nil {
-		updTask.TaskData = existingTask.TaskData
-	}
-
 	tx, err := t.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return dtos.CreateTaskResp{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func(tx pgx.Tx, ctx context.Context) {
 		err := tx.Rollback(ctx)
-		if err != nil {
+		if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 			log.Println("Rollback failed: ", err)
 		}
 	}(tx, ctx)
+	var et s.Task
+
+	err = tx.QueryRow(ctx, getTaskDetailsForUpdate, updTask.TaskID).Scan(&et.ID, &et.SerialNumber, &et.Name, &et.Description, &et.Status, &et.Priority, &et.CreatedBy, &et.IsDeleted, &et.TaskData, &et.CreatedAt, &et.UpdatedAt, &et.RequestedAt)
+	if err != nil {
+		log.Println("Error retrieving task for update: ", err)
+		return dtos.CreateTaskResp{}, err
+	}
+
+	if updTask.RequestedAt.Before(et.RequestedAt) {
+		log.Println("RequestedAt for update is older than existing task")
+		return dtos.CreateTaskResp{}, errors.New("requestedAt for update task is lesser than existing tasks requested at time")
+	}
+
+	if updTask.Name == "" {
+		updTask.Name = et.Name
+	}
+	if updTask.Description == "" {
+		updTask.Description = et.Description
+	}
+	if updTask.Status == "" {
+		updTask.Status = et.Status
+	}
+	if updTask.Priority == 0 {
+		updTask.Priority = et.Priority
+	}
+	if updTask.TaskData == nil {
+		updTask.TaskData = et.TaskData
+	}
 
 	_, err = tx.Exec(ctx, updateTask, updTask.Name, updTask.Description, updTask.Status, updTask.Priority, updTask.TaskData, updTask.TaskID)
 	if err != nil {
