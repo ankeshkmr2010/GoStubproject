@@ -14,4 +14,5 @@ type TaskDbAccessor interface {
 
 	UpdateTask(ctx context.Context, task dtos.UpdateTaskReq) (dtos.CreateTaskResp, error)
 	DeleteTask(ctx context.Context, taskID uuid.UUID) error
+	ListTasks(ctx context.Context) ([]dtos.GetTaskResp, error)
 }

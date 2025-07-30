@@ -8,7 +8,6 @@ import (
 
 type Task struct {
 	ID          uuid.UUID       `json:"id"`
-	Version     int             `json:"version"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Status      string          `json:"status"`

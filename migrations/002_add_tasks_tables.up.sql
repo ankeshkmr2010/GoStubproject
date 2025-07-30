@@ -6,17 +6,22 @@ Create table if not exists tasks (
     priority integer not null default 1,
     created_by uuid not null,
     is_deleted boolean not null default false,
-    version integer not null default 1,
     task_data jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    primary key (id,version)
+    primary key (id)
 );
 
 Create index index_tasks_assigned_to on tasks (created_by);
 
-Create table if not exists parent_child_tasks (
-    parent_task_id uuid not null references tasks(id) on delete cascade,
-    child_task_id uuid not null references tasks(id) on delete cascade,
-    primary key (parent_task_id, child_task_id)
+
+CREATE TABLE IF NOT EXISTS task_relationships (
+    parent_id UUID NOT NULL,
+    child_id UUID NOT NULL,
+    relation_type TEXT DEFAULT 'depends_on', -- optional, if you want to describe the relation
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (parent_id)REFERENCES tasks(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (child_id) REFERENCES tasks(id)
+        ON DELETE CASCADE
 );

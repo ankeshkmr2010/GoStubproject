@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
+	cr "gostubproject/stub/controller"
 	"gostubproject/stub/drivers"
+	tr "gostubproject/stub/repos/tasksrepo"
 	"log"
 	"net/http"
 	"os"
@@ -35,8 +37,19 @@ func main() {
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 
+	taskDBAccessor := tr.NewTaskDbAccessorImpl(db)
+	appController := cr.NewAppController(taskDBAccessor)
+
 	go func() {
 		router.GET("/", func(c *gin.Context) { c.JSON(200, "Hello") })
+		router.GET("/ping", appController.Ping)
+		router.GET("/task/:id", appController.GetTaskByID)
+		router.POST("/task/create", appController.CreateTask)
+		router.POST("/task/add_child", appController.AddNewChildTask)
+		router.PUT("/task/update", appController.UpdateTask)
+		router.DELETE("/task/delete/:id", appController.DeleteTask)
+		router.GET("/task/list", appController.ListAllTasks)
+
 		server = &http.Server{
 			Addr:    ":8080",
 			Handler: router,

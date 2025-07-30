@@ -14,35 +14,39 @@ import (
 )
 
 const (
-	getLatestActiveTaskById = ` SELECT id, name, description, status, priority, created_by,is_deleted,version, task_data,created_at,updated_at
+	getLatestActiveTaskById = ` SELECT id, name, description, status, priority, created_by,is_deleted, task_data,created_at,updated_at
 		FROM tasks
 		WHERE id = $1
 		  AND is_deleted = false
-		ORDER BY version DESC
 		LIMIT 1;`
 
-	getLatestActiveTasksForCreator = ` SELECT DISTINCT ON (id) id, name, description, status, priority, created_by, is_deleted, version,task_data,created_at,updated_at
+	getLatestActiveTasksForCreator = ` SELECT id, name, description, status, priority, created_by, is_deleted,task_data,created_at,updated_at
 	FROM tasks
 	WHERE created_by = $1
 	  AND is_deleted = false
-	ORDER BY id, version DESC;
+	ORDER BY created_at DESC;
 	`
 
-	insertIntoTasks = `INSERT INTO tasks (id, name, description, status, priority, created_by, is_deleted, version, task_data, created_at, updated_at)
-    	VALUES ($1, $2, $3, $4, $5, $6, false, 1, $7, NOW(), NOW()) `
-
-	addChildTask = `INSERT INTO parent_child_tasks (parent_task_id, child_task_id)
-    	VALUES ($1, $2)`
+	insertIntoTasks = `INSERT INTO tasks (id, name, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at)
+    	VALUES ($1, $2, $3, $4, $5, $6, false, $7, NOW(), NOW()) `
 
 	updateTask = `UPDATE tasks
-	SET name = $1, description = $2, status = $3, priority = $4, task_data = $5, updated_at = NOW(),version = version + 1
+	SET name = $1, description = $2, status = $3, priority = $4, task_data = $5, updated_at = NOW()
 	WHERE id = $6 and 
 	    is_deleted = false`
+
+	addChildTask = `INSERT INTO task_relationships(parent_id, child_id, created_at) VALUES 
+	($1, $2, NOW())`
 
 	deleteTask = `UPDATE tasks
 	SET is_deleted = true, updated_at = NOW()
 	WHERE id = $1
 	  AND is_deleted = false;`
+
+	listTasks = `SELECT id, name, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at 
+	FROM tasks
+	WHERE is_deleted = false
+	ORDER BY created_at DESC;`
 )
 
 type TasksDbAccessorImpl struct {
@@ -52,7 +56,7 @@ type TasksDbAccessorImpl struct {
 func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dtos.GetTaskResp, error) {
 	var taskData s.Task
 	row := t.db.QueryRow(ctx, getLatestActiveTaskById, id)
-	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.Version, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt)
+	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Println("No task found with ID: ", id)
@@ -64,7 +68,6 @@ func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dt
 	return dtos.GetTaskResp{
 		NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
 			ID:          taskData.ID,
-			Version:     taskData.Version,
 			Name:        taskData.Name,
 			Description: taskData.Description,
 			Status:      taskData.Status,
@@ -88,14 +91,13 @@ func (t *TasksDbAccessorImpl) GetTasksForCreator(ctx context.Context, createdBy 
 
 	for rows.Next() {
 		var taskData s.Task
-		if err := rows.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.Version, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt); err != nil {
+		if err := rows.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt); err != nil {
 			return nil, err
 		}
 
 		tasks = append(tasks, dtos.GetTaskResp{
 			NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
 				ID:          taskData.ID,
-				Version:     taskData.Version,
 				Name:        taskData.Name,
 				Description: taskData.Description,
 				Status:      taskData.Status,
@@ -159,6 +161,39 @@ func (t *TasksDbAccessorImpl) AddNewChildTask(ctx context.Context, task dtos.Add
 }
 
 func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, task dtos.UpdateTaskReq) (dtos.CreateTaskResp, error) {
+	// get task by ID to ensure it exists and is not deleted
+	existingTask, err := t.GetTaskByID(ctx, task.TaskID)
+	if err != nil {
+		log.Println("Error retrieving task for update: ", err)
+		return dtos.CreateTaskResp{}, err
+	}
+
+	if existingTask.NonDeletedTaskResp == nil {
+		log.Println("Task not found or is deleted: ", task.TaskID)
+		return dtos.CreateTaskResp{}, fmt.Errorf("task not found or is deleted: %s", task.TaskID)
+	}
+
+	if existingTask.IsDeleted {
+		log.Println("Task is deleted, cannot update: ", task.TaskID)
+		return dtos.CreateTaskResp{}, fmt.Errorf("task is deleted: %s", task.TaskID)
+	}
+
+	if task.Name == "" {
+		task.Name = existingTask.Name
+	}
+	if task.Description == "" {
+		task.Description = existingTask.Description
+	}
+	if task.Status == "" {
+		task.Status = existingTask.Status
+	}
+	if task.Priority == 0 {
+		task.Priority = existingTask.Priority
+	}
+	if task.TaskData == nil {
+		task.TaskData = existingTask.TaskData
+	}
+
 	tx, err := t.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return dtos.CreateTaskResp{}, fmt.Errorf("begin tx: %w", err)
@@ -173,6 +208,12 @@ func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, task dtos.UpdateTa
 	_, err = tx.Exec(ctx, updateTask, task.Name, task.Description, task.Status, task.Priority, task.TaskData, task.TaskID)
 	if err != nil {
 		log.Println("Error updating task: ", err)
+		return dtos.CreateTaskResp{}, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		log.Println("Error committing transaction: ", err)
 		return dtos.CreateTaskResp{}, err
 	}
 
@@ -210,6 +251,44 @@ func (t *TasksDbAccessorImpl) DeleteTask(ctx context.Context, taskID uuid.UUID) 
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp, error) {
+	var tasks []dtos.GetTaskResp
+	rows, err := t.db.Query(ctx, listTasks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var taskData s.Task
+		if err := rows.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt); err != nil {
+			return nil, err
+		}
+
+		tasks = append(tasks, dtos.GetTaskResp{
+			NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
+				ID:          taskData.ID,
+				Name:        taskData.Name,
+				Description: taskData.Description,
+				Status:      taskData.Status,
+				Priority:    taskData.Priority,
+				CreatedBy:   taskData.CreatedBy,
+				TaskData:    taskData.TaskData,
+				CreatedAt:   taskData.CreatedAt,
+				UpdatedAt:   taskData.UpdatedAt,
+				Children:    nil, // Assuming children are not fetched here, can be added later
+			},
+			IsDeleted: taskData.IsDeleted,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
 }
 
 func NewTaskDbAccessorImpl(db *pgxpool.Pool) interfaces.TaskDbAccessor {
