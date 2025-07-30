@@ -11,6 +11,8 @@ import (
 	"gostubproject/stub/models/dtos"
 	s "gostubproject/stub/models/schemas"
 	"log"
+	"math"
+	"time"
 )
 
 const (
@@ -47,6 +49,18 @@ const (
 	FROM tasks
 	WHERE is_deleted = false
 	ORDER BY created_at DESC;`
+
+	listAllPaginated = `
+		SELECT id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at
+		FROM tasks
+		WHERE is_deleted = false
+		AND (
+		    created_at > $1
+		    OR (created_at = $1 AND serial_number > $2)
+		)
+		ORDER BY created_at , serial_number 
+		LIMIT $3;
+	`
 )
 
 type TasksDbAccessorImpl struct {
@@ -76,7 +90,6 @@ func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dt
 			TaskData:    taskData.TaskData,
 			CreatedAt:   taskData.CreatedAt,
 			UpdatedAt:   taskData.UpdatedAt,
-			Children:    nil, // Assuming children are not fetched here, can be added later
 		},
 	}, nil
 }
@@ -90,26 +103,12 @@ func (t *TasksDbAccessorImpl) GetTasksForCreator(ctx context.Context, createdBy 
 	defer rows.Close()
 
 	for rows.Next() {
-		var taskData s.Task
-		if err := rows.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt); err != nil {
+		var td s.Task
+		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt); err != nil {
 			return nil, err
 		}
 
-		tasks = append(tasks, dtos.GetTaskResp{
-			NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
-				ID:          taskData.ID,
-				Name:        taskData.Name,
-				Description: taskData.Description,
-				Status:      taskData.Status,
-				Priority:    taskData.Priority,
-				CreatedBy:   taskData.CreatedBy,
-				TaskData:    taskData.TaskData,
-				CreatedAt:   taskData.CreatedAt,
-				UpdatedAt:   taskData.UpdatedAt,
-				Children:    nil, // Assuming children are not fetched here, can be added later
-			},
-			IsDeleted: taskData.IsDeleted,
-		})
+		tasks = append(tasks, getRespFromTaskData(td))
 	}
 
 	if err := rows.Err(); err != nil {
@@ -143,6 +142,7 @@ func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTa
 	}, nil
 }
 
+// AddNewChildTask : For later functionality, currently not used
 func (t *TasksDbAccessorImpl) AddNewChildTask(ctx context.Context, task dtos.AddNewChildTaskReq) error {
 	if len(task.ChildTask) == 0 {
 		return errors.New("no child tasks provided")
@@ -262,26 +262,12 @@ func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp
 	defer rows.Close()
 
 	for rows.Next() {
-		var taskData s.Task
-		if err := rows.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt); err != nil {
+		var td s.Task
+		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt); err != nil {
 			return nil, err
 		}
 
-		tasks = append(tasks, dtos.GetTaskResp{
-			NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
-				ID:          taskData.ID,
-				Name:        taskData.Name,
-				Description: taskData.Description,
-				Status:      taskData.Status,
-				Priority:    taskData.Priority,
-				CreatedBy:   taskData.CreatedBy,
-				TaskData:    taskData.TaskData,
-				CreatedAt:   taskData.CreatedAt,
-				UpdatedAt:   taskData.UpdatedAt,
-				Children:    nil, // Assuming children are not fetched here, can be added later
-			},
-			IsDeleted: taskData.IsDeleted,
-		})
+		tasks = append(tasks, getRespFromTaskData(td))
 	}
 
 	if err := rows.Err(); err != nil {
@@ -289,6 +275,68 @@ func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp
 	}
 
 	return tasks, nil
+}
+
+func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error) {
+
+	// Handle default cursor for first page
+	var createdAt time.Time
+	var serialNumber int64
+	if cursor == nil || (cursor.CreatedAt.IsZero() && cursor.SerialNumber == 0) {
+		log.Println("Cursor is empty")
+		createdAt = time.Date(0, 0, 0, 0, 0, 0, 0, time.UTC)
+		serialNumber = math.MinInt64
+	} else {
+		createdAt = cursor.CreatedAt
+		serialNumber = cursor.SerialNumber
+	}
+	if pageSize <= 0 {
+		pageSize = 10 // Default page size
+	}
+
+	rows, err := t.db.Query(ctx, listAllPaginated, createdAt, serialNumber, pageSize)
+	if err != nil {
+		return dtos.ListTasksResp{}, err
+	}
+	defer rows.Close()
+
+	tasks := make([]dtos.GetTaskResp, 0)
+	var nextCursor *s.TaskCursor
+
+	for rows.Next() {
+		var td s.Task
+		// 					id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at
+		err := rows.Scan(&td.ID, &td.Name, &td.SerialNumber, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt)
+		if err != nil {
+			return dtos.ListTasksResp{}, err
+		}
+		tasks = append(tasks, getRespFromTaskData(td))
+
+		// Set next cursor to last item (assuming DESC order)
+		nextCursor = &s.TaskCursor{
+			CreatedAt:    td.CreatedAt,
+			SerialNumber: td.SerialNumber,
+		}
+	}
+
+	return dtos.ListTasksResp{Tasks: tasks, Cursor: nextCursor}, rows.Err()
+}
+
+func getRespFromTaskData(taskData s.Task) dtos.GetTaskResp {
+	return dtos.GetTaskResp{
+		NonDeletedTaskResp: &dtos.NonDeletedTaskResp{
+			ID:          taskData.ID,
+			Name:        taskData.Name,
+			Description: taskData.Description,
+			Status:      taskData.Status,
+			Priority:    taskData.Priority,
+			CreatedBy:   taskData.CreatedBy,
+			TaskData:    taskData.TaskData,
+			CreatedAt:   taskData.CreatedAt,
+			UpdatedAt:   taskData.UpdatedAt,
+		},
+		IsDeleted: taskData.IsDeleted,
+	}
 }
 
 func NewTaskDbAccessorImpl(db *pgxpool.Pool) interfaces.TaskDbAccessor {

@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gostubproject/stub/models/dtos"
+	"log"
 )
 
 func (a *AppController) GetTaskByID(c *gin.Context) {
@@ -38,22 +39,6 @@ func (a *AppController) CreateTask(c *gin.Context) {
 	}
 
 	c.JSON(201, createResp)
-}
-
-func (a *AppController) AddNewChildTask(c *gin.Context) {
-	var addChildTaskReq dtos.AddNewChildTaskReq
-	if err := c.ShouldBindJSON(&addChildTaskReq); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	err := a.TaskDbAccessor.AddNewChildTask(c.Request.Context(), addChildTaskReq)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "Failed to add child task"})
-		return
-	}
-
-	c.JSON(201, gin.H{"message": "Child task added successfully"})
 }
 
 func (a *AppController) UpdateTask(c *gin.Context) {
@@ -101,4 +86,19 @@ func (a *AppController) ListAllTasks(c *gin.Context) {
 		return
 	}
 	c.JSON(200, tasks)
+}
+
+func (a *AppController) ListTasksPaginated(c *gin.Context) {
+	var listReq dtos.ListTasksReq
+	if err := c.BindJSON(&listReq); err != nil {
+		c.JSON(400, gin.H{"error": "Invalid query parameters"})
+		return
+	}
+	resp, err := a.TaskDbAccessor.ListTasksPaginated(c.Request.Context(), listReq.Cursor, listReq.PageSize)
+	if err != nil {
+		log.Println(err.Error())
+		c.JSON(500, gin.H{"error": "Failed to retrieve tasks"})
+		return
+	}
+	c.JSON(200, resp)
 }

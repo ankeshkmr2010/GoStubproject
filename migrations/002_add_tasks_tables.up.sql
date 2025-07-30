@@ -1,5 +1,6 @@
 Create table if not exists tasks (
     id uuid,
+    serial_number BIGSERIAL,
     name text not null,
     description text,
     status text not null default 'pending',
