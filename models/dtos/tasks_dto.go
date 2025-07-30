@@ -35,7 +35,6 @@ type UpdateTaskReq struct {
 	Status      string          `json:"status"`
 	TaskData    json.RawMessage `json:"task_data"`
 	Priority    int             `json:"priority"`
-	CreatedBy   uuid.UUID       `json:"created_by"`
 }
 type AddNewChildTaskReq struct {
 	TaskID    uuid.UUID   `json:"task_id"`
