@@ -61,6 +61,7 @@ const (
 		SELECT id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at, requested_at
 		FROM tasks
 		WHERE is_deleted = false
+		  AND status ILIKE $4
 		AND (
 		    created_at > $1
 		    OR (created_at = $1 AND serial_number > $2)
@@ -291,7 +292,7 @@ func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp
 	return tasks, nil
 }
 
-func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error) {
+func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilter string, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error) {
 
 	// Handle default cursor for first page
 	var createdAt time.Time
@@ -308,7 +309,11 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, cursor *s.
 		pageSize = 10 // Default page size
 	}
 
-	rows, err := t.db.Query(ctx, listAllPaginated, createdAt, serialNumber, pageSize)
+	if statusFilter == "" || statusFilter == "all" {
+		statusFilter = "%%"
+	}
+	query := listAllPaginated
+	rows, err := t.db.Query(ctx, query, createdAt, serialNumber, pageSize, statusFilter)
 	if err != nil {
 		return dtos.ListTasksResp{}, err
 	}
@@ -319,7 +324,6 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, cursor *s.
 
 	for rows.Next() {
 		var td s.Task
-		// 					id, name, serial_number, description, status, priority, created_by, is_deleted, task_data, created_at, updated_at
 		err := rows.Scan(&td.ID, &td.Name, &td.SerialNumber, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt)
 		if err != nil {
 			return dtos.ListTasksResp{}, err

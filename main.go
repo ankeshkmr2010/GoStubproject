@@ -47,8 +47,7 @@ func main() {
 		router.POST("/task/create", appController.CreateTask)
 		router.PUT("/task/update", appController.UpdateTask)
 		router.DELETE("/task/delete/:id", appController.DeleteTask)
-		router.GET("/task/list", appController.ListAllTasks)
-		router.POST("task/list_paginated", appController.ListTasksPaginated)
+		router.POST("/tasks", appController.ListTasksPaginated)
 
 		server = &http.Server{
 			Addr:    ":8080",

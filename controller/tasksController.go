@@ -89,12 +89,18 @@ func (a *AppController) ListAllTasks(c *gin.Context) {
 }
 
 func (a *AppController) ListTasksPaginated(c *gin.Context) {
+	var statusFilter string
+	if status := c.Query("status"); status != "" {
+		statusFilter = status
+	} else {
+		statusFilter = "all"
+	}
 	var listReq dtos.ListTasksReq
 	if err := c.BindJSON(&listReq); err != nil {
 		c.JSON(400, gin.H{"error": "Invalid query parameters"})
 		return
 	}
-	resp, err := a.TaskDbAccessor.ListTasksPaginated(c.Request.Context(), listReq.Cursor, listReq.PageSize)
+	resp, err := a.TaskDbAccessor.ListTasksPaginated(c.Request.Context(), statusFilter, listReq.Cursor, listReq.PageSize)
 	if err != nil {
 		log.Println(err.Error())
 		c.JSON(500, gin.H{"error": "Failed to retrieve tasks"})

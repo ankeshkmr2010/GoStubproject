@@ -14,5 +14,5 @@ type TaskDbAccessor interface {
 	UpdateTask(ctx context.Context, task dtos.UpdateTaskReq) (dtos.CreateTaskResp, error)
 	DeleteTask(ctx context.Context, taskID uuid.UUID) error
 	ListTasks(ctx context.Context) ([]dtos.GetTaskResp, error)
-	ListTasksPaginated(ctx context.Context, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error)
+	ListTasksPaginated(ctx context.Context, statusFilter string, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error)
 }
