@@ -37,6 +37,19 @@ A simple microservice for managing tasks, built in Go using the GinGonic framewo
   - (Migrations run automatically on startup.)
     The API will be available at http://localhost:8080.
 
+- ### Using Docker:
+  - Clone the repository
+  - Make sure to update the .env file with the ip of your host machine if running on Docker Desktop.
+  - Build the Docker image:
+    ```bash
+    docker build -t go-task-service .
+    ```
+  - Run the container:
+    ```bash
+    docker run -p 8080:8080 --env-file .env go-task-service
+    ```
+    
+
   
 ## API Endpoints
 
