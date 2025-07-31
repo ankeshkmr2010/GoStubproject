@@ -21,7 +21,7 @@ import (
 type CreateTaskReq struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
-	Status      string          `json:"status"`
+	Status      s.TaskStatus    `json:"status"`
 	TaskData    json.RawMessage `json:"task_data"`
 	Priority    int             `json:"priority"`
 	CreatedBy   uuid.UUID       `json:"created_by"`
@@ -34,7 +34,7 @@ type UpdateTaskReq struct {
 	TaskID      uuid.UUID       `json:"id"`
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	Status      string          `json:"status"`
+	Status      s.TaskStatus    `json:"status"`
 	TaskData    json.RawMessage `json:"task_data"`
 	Priority    int             `json:"priority"`
 	RequestedAt time.Time       `json:"requested_at"`
@@ -59,7 +59,7 @@ type GetTaskResp struct {
 	ID           uuid.UUID       `json:"id"`
 	Name         string          `json:"name"`
 	Description  string          `json:"description,omitempty"`
-	Status       string          `json:"status"`
+	Status       s.TaskStatus    `json:"status"`
 	Priority     int             `json:"priority"`
 	CreatedBy    uuid.UUID       `json:"created_by"`
 	TaskData     json.RawMessage `json:"task_data"`

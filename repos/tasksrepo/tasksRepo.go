@@ -44,9 +44,6 @@ const (
 	WHERE id = $6 and 
 	    is_deleted = false`
 
-	addChildTask = `INSERT INTO task_relationships(parent_id, child_id, created_at) VALUES 
-	($1, $2, NOW())`
-
 	deleteTask = `UPDATE tasks
 	SET is_deleted = true, updated_at = NOW()
 	WHERE id = $1
@@ -82,13 +79,19 @@ func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dt
 		return dtos.GetTaskResp{}, errors.New("task ID is required for retrieval")
 	}
 	row := t.db.QueryRow(ctx, getLatestActiveTaskById, id)
-	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &taskData.Status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt, &taskData.RequestedAt)
+	var status string
+	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt, &taskData.RequestedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Println("No task found with ID: ", id)
 			return dtos.GetTaskResp{}, nil
 		}
 		return dtos.GetTaskResp{}, err
+	}
+	taskData.Status, err = s.TaskStatusFromString(status)
+	if err != nil {
+		log.Println("Error converting status string to TaskStatus: ", err)
+		return dtos.GetTaskResp{}, fmt.Errorf("error converting status string to TaskStatus: %w", err)
 	}
 
 	return getRespFromTaskData(taskData), nil
@@ -104,8 +107,14 @@ func (t *TasksDbAccessorImpl) GetTasksForCreator(ctx context.Context, createdBy 
 
 	for rows.Next() {
 		var td s.Task
-		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, td.RequestedAt); err != nil {
+		var status string
+		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, td.RequestedAt); err != nil {
 			return nil, err
+		}
+		td.Status, err = s.TaskStatusFromString(status)
+		if err != nil {
+			log.Println("Error converting status string to TaskStatus: ", err)
+			return nil, fmt.Errorf("error converting status string to TaskStatus: %w", err)
 		}
 		tasks = append(tasks, getRespFromTaskData(td))
 	}
@@ -126,12 +135,6 @@ func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTa
 		log.Println("Task name is required for creation")
 		return dtos.CreateTaskResp{}, errors.New("task name is required for creation")
 	}
-
-	if task.Status == "" {
-		log.Println("Task status is required for creation")
-		return dtos.CreateTaskResp{}, errors.New("task status is required for creation")
-	}
-
 	_, err := t.db.Exec(ctx, insertIntoTasks, id, task.Name, task.Description, task.Status, task.Priority, task.CreatedBy, task.TaskData, task.RequestedAt)
 	if err != nil {
 		log.Println("Error inserting new task: ", err)
@@ -151,24 +154,6 @@ func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTa
 			RequestedAt: task.RequestedAt,
 		},
 	}, nil
-}
-
-// AddNewChildTask : For later functionality, currently not used
-func (t *TasksDbAccessorImpl) AddNewChildTask(ctx context.Context, task dtos.AddNewChildTaskReq) error {
-	if len(task.ChildTask) == 0 {
-		return errors.New("no child tasks provided")
-	}
-
-	//  change this to bulk inserts
-	for _, childID := range task.ChildTask {
-		_, err := t.db.Exec(ctx, addChildTask, task.TaskID, childID)
-		if err != nil {
-			log.Println("Error adding child task: ", err)
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, updTask dtos.UpdateTaskReq) (dtos.CreateTaskResp, error) {
@@ -212,7 +197,7 @@ func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, updTask dtos.Updat
 	if updTask.Description == "" {
 		updTask.Description = et.Description
 	}
-	if updTask.Status == "" {
+	if updTask.Status == 0 {
 		updTask.Status = et.Status
 	}
 	if updTask.Priority == 0 {
@@ -278,8 +263,14 @@ func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp
 
 	for rows.Next() {
 		var td s.Task
-		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt); err != nil {
+		var status string
+		if err := rows.Scan(&td.ID, &td.Name, &td.Description, &status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt); err != nil {
 			return nil, err
+		}
+		td.Status, err = s.TaskStatusFromString(status)
+		if err != nil {
+			log.Println("Error converting status string to TaskStatus: ", err)
+			return nil, fmt.Errorf("error converting status string to TaskStatus: %w", err)
 		}
 
 		tasks = append(tasks, getRespFromTaskData(td))
@@ -311,6 +302,12 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilt
 
 	if statusFilter == "" || statusFilter == "all" {
 		statusFilter = "%%"
+	} else {
+		_, err := s.TaskStatusFromString(statusFilter)
+		if err != nil {
+			log.Println("Invalid status filter provided: ", statusFilter)
+			return dtos.ListTasksResp{}, fmt.Errorf("invalid status filter: %s", statusFilter)
+		}
 	}
 	query := listAllPaginated
 	rows, err := t.db.Query(ctx, query, createdAt, serialNumber, pageSize, statusFilter)
@@ -324,10 +321,17 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilt
 
 	for rows.Next() {
 		var td s.Task
-		err := rows.Scan(&td.ID, &td.Name, &td.SerialNumber, &td.Description, &td.Status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt)
+		var status string
+		err := rows.Scan(&td.ID, &td.Name, &td.SerialNumber, &td.Description, &status, &td.Priority, &td.CreatedBy, &td.IsDeleted, &td.TaskData, &td.CreatedAt, &td.UpdatedAt, &td.RequestedAt)
 		if err != nil {
 			return dtos.ListTasksResp{}, err
 		}
+		td.Status, err = s.TaskStatusFromString(status)
+		if err != nil {
+			log.Println("Error converting status string to TaskStatus: ", err)
+			return dtos.ListTasksResp{}, fmt.Errorf("error converting status string to TaskStatus: %w", err)
+		}
+
 		tasks = append(tasks, getRespFromTaskData(td))
 
 		// Set next cursor to last item (assuming DESC order)

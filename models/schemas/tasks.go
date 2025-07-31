@@ -10,7 +10,7 @@ type Task struct {
 	ID           uuid.UUID       `json:"id"`
 	Name         string          `json:"name"`
 	Description  string          `json:"description,omitempty"`
-	Status       string          `json:"status"`
+	Status       TaskStatus      `json:"status"`
 	Priority     int             `json:"priority"`
 	CreatedBy    uuid.UUID       `json:"created_by"`
 	IsDeleted    bool            `json:"is_deleted"`
