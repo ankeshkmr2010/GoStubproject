@@ -2,7 +2,6 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gostubproject/stub/models/dtos"
 	"log"
 )
@@ -14,9 +13,7 @@ func (a *AppController) GetTaskByID(c *gin.Context) {
 		return
 	}
 
-	taskUuid, err := uuid.Parse(taskID)
-
-	task, err := a.TaskDbAccessor.GetTaskByID(c.Request.Context(), taskUuid)
+	task, err := a.TaskDbAccessor.GetTaskByID(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to retrieve task", "details": err.Error()})
 		return
@@ -64,13 +61,7 @@ func (a *AppController) DeleteTask(c *gin.Context) {
 		return
 	}
 
-	taskUuid, err := uuid.Parse(taskID)
-	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid Task ID format", "details": err.Error()})
-		return
-	}
-
-	err = a.TaskDbAccessor.DeleteTask(c.Request.Context(), taskUuid)
+	err := a.TaskDbAccessor.DeleteTask(c.Request.Context(), taskID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to delete task", "details": err.Error()})
 		return

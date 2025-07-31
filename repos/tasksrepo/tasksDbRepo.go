@@ -11,8 +11,6 @@ import (
 	"gostubproject/stub/models/dtos"
 	s "gostubproject/stub/models/schemas"
 	"log"
-	"math"
-	"time"
 )
 
 const (
@@ -74,10 +72,6 @@ type TasksDbAccessorImpl struct {
 
 func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dtos.GetTaskResp, error) {
 	var taskData s.Task
-	if id == uuid.Nil {
-		log.Println("Task ID is required for retrieval")
-		return dtos.GetTaskResp{}, errors.New("task ID is required for retrieval")
-	}
 	row := t.db.QueryRow(ctx, getLatestActiveTaskById, id)
 	var status string
 	err := row.Scan(&taskData.ID, &taskData.Name, &taskData.Description, &status, &taskData.Priority, &taskData.CreatedBy, &taskData.IsDeleted, &taskData.TaskData, &taskData.CreatedAt, &taskData.UpdatedAt, &taskData.RequestedAt)
@@ -90,7 +84,6 @@ func (t *TasksDbAccessorImpl) GetTaskByID(ctx context.Context, id uuid.UUID) (dt
 	}
 	taskData.Status, err = s.TaskStatusFromString(status)
 	if err != nil {
-		log.Println("Error converting status string to TaskStatus: ", err)
 		return dtos.GetTaskResp{}, fmt.Errorf("error converting status string to TaskStatus: %w", err)
 	}
 
@@ -127,14 +120,7 @@ func (t *TasksDbAccessorImpl) GetTasksForCreator(ctx context.Context, createdBy 
 
 func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTaskReq) (dtos.CreateTaskResp, error) {
 	id := uuid.New()
-	if task.RequestedAt.IsZero() {
-		log.Println("Requested at is required for task creation")
-		return dtos.CreateTaskResp{}, errors.New("requested at is required for task creation")
-	}
-	if task.Name == "" {
-		log.Println("Task name is required for creation")
-		return dtos.CreateTaskResp{}, errors.New("task name is required for creation")
-	}
+
 	_, err := t.db.Exec(ctx, insertIntoTasks, id, task.Name, task.Description, task.Status, task.Priority, task.CreatedBy, task.TaskData, task.RequestedAt)
 	if err != nil {
 		log.Println("Error inserting new task: ", err)
@@ -158,15 +144,6 @@ func (t *TasksDbAccessorImpl) CreateTask(ctx context.Context, task dtos.CreateTa
 
 func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, updTask dtos.UpdateTaskReq) (dtos.CreateTaskResp, error) {
 	// get task by ID to ensure it exists and is not deleted
-	if updTask.TaskID == uuid.Nil {
-		log.Println("Task ID is required for update")
-		return dtos.CreateTaskResp{}, errors.New("task ID is required for update")
-	}
-
-	if updTask.RequestedAt.IsZero() {
-		log.Println("Requested at is required for update")
-		return dtos.CreateTaskResp{}, errors.New("requested at is required for update")
-	}
 
 	tx, err := t.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -179,15 +156,18 @@ func (t *TasksDbAccessorImpl) UpdateTask(ctx context.Context, updTask dtos.Updat
 		}
 	}(tx, ctx)
 	var et s.Task
-
-	err = tx.QueryRow(ctx, getTaskDetailsForUpdate, updTask.TaskID).Scan(&et.ID, &et.SerialNumber, &et.Name, &et.Description, &et.Status, &et.Priority, &et.CreatedBy, &et.IsDeleted, &et.TaskData, &et.CreatedAt, &et.UpdatedAt, &et.RequestedAt)
+	var status string
+	err = tx.QueryRow(ctx, getTaskDetailsForUpdate, updTask.TaskID).Scan(&et.ID, &et.SerialNumber, &et.Name, &et.Description, &status, &et.Priority, &et.CreatedBy, &et.IsDeleted, &et.TaskData, &et.CreatedAt, &et.UpdatedAt, &et.RequestedAt)
 	if err != nil {
 		log.Println("Error retrieving task for update: ", err)
 		return dtos.CreateTaskResp{}, err
 	}
+	et.Status, err = s.TaskStatusFromString(status)
+	if err != nil {
+		return dtos.CreateTaskResp{}, fmt.Errorf("error converting status string to TaskStatus: %w", err)
+	}
 
 	if updTask.RequestedAt.Before(et.RequestedAt) {
-		log.Println("RequestedAt for update is older than existing task")
 		return dtos.CreateTaskResp{}, errors.New("requestedAt for update task is lesser than existing tasks requested at time")
 	}
 
@@ -246,7 +226,6 @@ func (t *TasksDbAccessorImpl) DeleteTask(ctx context.Context, taskID uuid.UUID) 
 
 	_, err = tx.Exec(ctx, deleteTask, taskID)
 	if err != nil {
-		log.Println("Error deleting task: ", err)
 		return err
 	}
 
@@ -284,22 +263,6 @@ func (t *TasksDbAccessorImpl) ListTasks(ctx context.Context) ([]dtos.GetTaskResp
 }
 
 func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilter string, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error) {
-
-	// Handle default cursor for first page
-	var createdAt time.Time
-	var serialNumber int64
-	if cursor == nil || (cursor.CreatedAt.IsZero() && cursor.SerialNumber == 0) {
-		log.Println("Cursor is empty")
-		createdAt = time.Date(0, 0, 0, 0, 0, 0, 0, time.UTC)
-		serialNumber = math.MinInt64
-	} else {
-		createdAt = cursor.CreatedAt
-		serialNumber = cursor.SerialNumber
-	}
-	if pageSize <= 0 {
-		pageSize = 10 // Default page size
-	}
-
 	if statusFilter == "" || statusFilter == "all" {
 		statusFilter = "%%"
 	} else {
@@ -309,8 +272,7 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilt
 			return dtos.ListTasksResp{}, fmt.Errorf("invalid status filter: %s", statusFilter)
 		}
 	}
-	query := listAllPaginated
-	rows, err := t.db.Query(ctx, query, createdAt, serialNumber, pageSize, statusFilter)
+	rows, err := t.db.Query(ctx, listAllPaginated, cursor.CreatedAt, cursor.SerialNumber, pageSize, statusFilter)
 	if err != nil {
 		return dtos.ListTasksResp{}, err
 	}
@@ -318,7 +280,7 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilt
 
 	tasks := make([]dtos.GetTaskResp, 0)
 	var nextCursor *s.TaskCursor
-
+	var lastTask *s.Task
 	for rows.Next() {
 		var td s.Task
 		var status string
@@ -328,19 +290,18 @@ func (t *TasksDbAccessorImpl) ListTasksPaginated(ctx context.Context, statusFilt
 		}
 		td.Status, err = s.TaskStatusFromString(status)
 		if err != nil {
-			log.Println("Error converting status string to TaskStatus: ", err)
 			return dtos.ListTasksResp{}, fmt.Errorf("error converting status string to TaskStatus: %w", err)
 		}
-
 		tasks = append(tasks, getRespFromTaskData(td))
-
-		// Set next cursor to last item (assuming DESC order)
-		nextCursor = &s.TaskCursor{
-			CreatedAt:    td.CreatedAt,
-			SerialNumber: td.SerialNumber,
-		}
+		lastTask = &td
 	}
 
+	if lastTask != nil {
+		nextCursor = &s.TaskCursor{
+			CreatedAt:    lastTask.CreatedAt,
+			SerialNumber: lastTask.SerialNumber,
+		}
+	}
 	return dtos.ListTasksResp{Tasks: tasks, Cursor: nextCursor}, rows.Err()
 }
 

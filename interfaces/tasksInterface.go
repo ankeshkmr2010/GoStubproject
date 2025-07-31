@@ -16,3 +16,13 @@ type TaskDbAccessor interface {
 	ListTasks(ctx context.Context) ([]dtos.GetTaskResp, error)
 	ListTasksPaginated(ctx context.Context, statusFilter string, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error)
 }
+
+type TasksWrapper interface {
+	GetTaskByID(ctx context.Context, id string) (dtos.GetTaskResp, error)
+	GetTasksForCreator(ctx context.Context, createdBy string) ([]dtos.GetTaskResp, error)
+	CreateTask(ctx context.Context, task dtos.CreateTaskReq) (dtos.CreateTaskResp, error)
+	UpdateTask(ctx context.Context, task dtos.UpdateTaskReq) (dtos.CreateTaskResp, error)
+	DeleteTask(ctx context.Context, taskID string) error
+	ListTasks(ctx context.Context) ([]dtos.GetTaskResp, error)
+	ListTasksPaginated(ctx context.Context, statusFilter string, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error)
+}

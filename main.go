@@ -38,7 +38,8 @@ func main() {
 	router.Use(gin.Recovery())
 
 	taskDBAccessor := tr.NewTaskDbAccessorImpl(db)
-	appController := cr.NewAppController(taskDBAccessor)
+	taskRepo := tr.NewTasksRepo(taskDBAccessor)
+	appController := cr.NewAppController(taskRepo)
 
 	go func() {
 		router.GET("/", func(c *gin.Context) { c.JSON(200, "Hello") })

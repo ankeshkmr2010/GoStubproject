@@ -6,10 +6,10 @@ import (
 )
 
 type AppController struct {
-	TaskDbAccessor interfaces.TaskDbAccessor
+	TaskDbAccessor interfaces.TasksWrapper
 }
 
-func NewAppController(taskDbAccessor interfaces.TaskDbAccessor) *AppController {
+func NewAppController(taskDbAccessor interfaces.TasksWrapper) *AppController {
 	return &AppController{
 		TaskDbAccessor: taskDbAccessor,
 	}
