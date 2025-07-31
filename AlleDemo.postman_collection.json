@@ -1,0 +1,156 @@
+{
+	"info": {
+		"_postman_id": "e6b0a011-dd64-43de-8a73-3c434e8de738",
+		"name": "AlleDemo",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "8986307",
+		"_collection_link": "https://martian-rocket-885718.postman.co/workspace/My-Workspace~0a42530d-e608-4984-82b2-ffc6f9d9edb1/collection/8986307-e6b0a011-dd64-43de-8a73-3c434e8de738?action=share&source=collection_link&creator=8986307"
+	},
+	"item": [
+		{
+			"name": "hello",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "add task",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const response = pm.response.json();",
+							"pm.environment.set(\"taskId\", response.id);",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"test-task-3\",\n\t\"description\": \"test task by ankesh kmr\",\n\t\"status\": \"STARTED\",\n\t\"task_data\":\"{\\\"a\\\":123}\",\n\t\"priority\": 1,\n    \"requested_at\": \"2025-07-31T04:40:28.584057+05:30\"\n    \n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/task/create",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"task",
+						"create"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get task",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/task/{{taskId}}",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"task",
+						"{{taskId}}"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "update task",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"id\": \"{{taskId}}\",\n    \"name\": \"test-task-1\",\n    \"description\": \"test task by ankesh kmr\",\n    \"status\": \"STARTED\",\n    \"priority\": 1,\n    \"task_data\": {\n        \"key1\": \"val1\",\n        \"key2\": \"val2\"\n    },\n    \"requested_at\": \"2025-07-31T03:40:28.584057+05:30\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/task/update",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"task",
+						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "delete task",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "paginated list",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"cursor\": {\n        \"created_at\": \"2025-07-31T03:33:17.198022+05:30\",\n        \"serial_number\": 4\n    },\n    \"page_size\" : 4\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8080/tasks?status=pending",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"tasks"
+					],
+					"query": [
+						{
+							"key": "status",
+							"value": "pending"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
