@@ -16,7 +16,7 @@ A simple microservice for managing tasks, built in Go using the GinGonic framewo
 - **Database**: PostgreSQL for persistent storage, using pgx driver for database interactions. Use row level locking and transactions to handle concurrent updates.
 - **Pagination**: Implemented using cursor-based pagination for efficient data retrieval.
 - **Soft Delete**: Tasks are marked as deleted instead of being removed from the database, allowing for recovery and audit trails.
-- **Extensibility**: Easy to add new microservices with REST for communication.
+- **Extensibility**: Easy to add new microservices with REST for communication. The TaskWrapper can be used to add a repo for external service and will have any additional logic.
 
 ## Frameworks & Tools
 - Go (with Go modules)

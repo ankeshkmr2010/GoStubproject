@@ -26,3 +26,10 @@ type TasksWrapper interface {
 	ListTasks(ctx context.Context) ([]dtos.GetTaskResp, error)
 	ListTasksPaginated(ctx context.Context, statusFilter string, cursor *s.TaskCursor, pageSize int) (dtos.ListTasksResp, error)
 }
+
+// proxy ork
+// validation interface
+// reroutingService  interface
+// logging interface
+// metrics interface
+// rerouterInterface

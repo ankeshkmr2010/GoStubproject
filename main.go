@@ -39,6 +39,7 @@ func main() {
 
 	taskDBAccessor := tr.NewTaskDbAccessorImpl(db)
 	taskRepo := tr.NewTasksRepo(taskDBAccessor)
+
 	appController := cr.NewAppController(taskRepo)
 
 	go func() {

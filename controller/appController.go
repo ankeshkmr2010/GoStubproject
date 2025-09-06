@@ -7,11 +7,13 @@ import (
 
 type AppController struct {
 	TaskDbAccessor interfaces.TasksWrapper
+	// new repo proxy ork
 }
 
 func NewAppController(taskDbAccessor interfaces.TasksWrapper) *AppController {
 	return &AppController{
 		TaskDbAccessor: taskDbAccessor,
+		// repo proxy
 	}
 }
 
